@@ -1,16 +1,17 @@
 #include "task_rx.hh"
 #include "frame/parser.hh"
+#include "frame/frame.hh"
 #include "shared_state.hh"
 #include "driver/uart.hh"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
- 
+#include <memory>
+
  
 void task_rx(void *params) {
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
+    (void)params;
+    Parser::Parser parser;
  
     while (1) {
         // 1. lire un octet depuis l'UART (bloquant)
@@ -19,29 +20,36 @@ void task_rx(void *params) {
         if (received <= 0) continue;
  
         // 2. passer l'octet au parser
-        bool complete = parser_push_byte(byte, &ctx, &frame);
-        if (!complete) continue;
+        auto frame = parser.push_byte(byte);
+        if (!frame) continue;
  
         // 3. trame complète et valide
         set_last_rx_tick(xTaskGetTickCount());
         inc_stats_valid();
  
         // 4. dispatcher selon le type
-        switch (frame.type) {
-            case MSG_SPEED: {
-                float speed;
-                memcpy(&speed, frame.payload, sizeof(float));
-                set_speed(speed);
+        auto payload = frame->get_payload();
+        switch (frame->get_type()) {
+            case Frame::MsgType::SPEED: {
+                if (payload.size() >= sizeof(float)) {
+                    float speed;
+                    memcpy(&speed, payload.data(), sizeof(float));
+                    set_speed(speed);
+                }
                 break;
             }
-            case MSG_SETPOINT: {
-                float setpoint;
-                memcpy(&setpoint, frame.payload, sizeof(float));
-                set_setpoint(setpoint);
+            case Frame::MsgType::SETPOINT: {
+                if (payload.size() >= sizeof(float)) {
+                    float setpoint;
+                    memcpy(&setpoint, payload.data(), sizeof(float));
+                    set_setpoint(setpoint);
+                }
                 break;
             }
-            case MSG_MODE_SET: {
-                set_mode(frame.payload[0]);
+            case Frame::MsgType::MODE_SET: {
+                if (payload.size() >= sizeof(uint8_t)) {
+                    set_mode(payload[0]);
+                }
                 break;
             }
             default:

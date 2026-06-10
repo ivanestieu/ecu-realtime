@@ -2,6 +2,7 @@
 #include "pid.hh"
 #include "shared_state.hh"
 #include "frame/builder.hh"
+#include "frame/frame.hh"
 #include "frame/parser.hh"
 #include "driver/uart.hh"
 #include "freertos/FreeRTOS.h"
@@ -30,8 +31,8 @@ void task_pid(void *params) {
         inc_stats_output();
  
         // 6. construire et envoyer la trame OUTPUT
-        uint8_t buf[32];
-        int len = builder_output(buf, output);
-        uart_write_bytes(UART_NUM_0, buf, len);
+        Frame frame = builder::output(output);
+        const auto& frame_bytes = frame.get_full_frame();
+        uart_write_bytes(UART_NUM_0, (uint8_t*)frame_bytes.data(), frame_bytes.size());
     }
 }

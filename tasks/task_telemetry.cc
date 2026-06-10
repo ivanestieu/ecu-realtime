@@ -1,9 +1,11 @@
 #include "task_telemetry.hh"
 #include "shared_state.hh"
 #include "frame/builder.hh"
+#include "frame/frame.hh"
 #include "driver/uart.hh"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <vector>
 
 void task_telemetry(void *params) {
     (void)params;
@@ -22,8 +24,9 @@ void task_telemetry(void *params) {
         };
  
         // construire et envoyer la trame STATS
-        uint8_t buf[32];
-        int len = builder_stats(buf, stats);
-        uart_write_bytes(UART_NUM_0, buf, len);
+        std::vector<std::uint32_t> stats_vec(stats, stats + 4);
+        Frame frame = builder::stats(stats_vec);
+        const auto& frame_bytes = frame.get_full_frame();
+        uart_write_bytes(UART_NUM_0, (uint8_t*)frame_bytes.data(), frame_bytes.size());
     }
 }

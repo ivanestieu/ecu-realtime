@@ -1,11 +1,13 @@
 #include "task_failsafe.hh"
 #include "shared_state.hh"
 #include "frame/builder.hh"
+#include "frame/frame.hh"
 #include "frame/parser.hh"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string>
  
 // Handle de la tâche — nécessaire pour notifier depuis l'ISR
 static TaskHandle_t failsafe_task_handle = NULL;
@@ -33,9 +35,9 @@ void IRAM_ATTR failsafe_gpio_isr_handler(void *arg) {
 static void trigger_failsafe(const char *reason) {
     set_mode(MODE_OFF);
  
-    uint8_t buf[80];
-    int len = builder_alarm(buf, reason);
-    uart_write_bytes(UART_NUM_0, buf, len);
+    Frame frame = builder::alarm(std::string(reason));
+    const auto& frame_bytes = frame.get_full_frame();
+    uart_write_bytes(UART_NUM_0, (uint8_t*)frame_bytes.data(), frame_bytes.size());
 }
  
 void task_failsafe(void *params) {
