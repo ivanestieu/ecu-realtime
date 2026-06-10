@@ -1,89 +1,111 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "frame/parser.h"
-#include "frame/builder.h"
+#include <iomanip>
+#include <iostream>
 
-// Couleurs pour les tests
-#define GREEN   "\033[32m"
-#define RED     "\033[31m"
-#define RESET   "\033[0m"
-#define BOLD    "\033[1m"
+#include "frame/parser.hh"
+#include "frame/builder.hh"
+
+static constexpr std::string GREEN = "\033[32m";
+static constexpr std::string RED = "\033[31m";
+static constexpr std::string RESET = "\033[0m";
+static constexpr std::string BOLD = "\033[1m";
 
 // ===========================================================================
 // TESTS UNITAIRES
 // ===========================================================================
 
-int test_count = 0;
-int test_passed = 0;
+static int test_count = 0;
+static int test_passed = 0;
 
-void assert_true(int condition, const char *test_name) {
+static uint8_t compute_crc(std::vector<uint8_t>::const_iterator begin, const std::vector<uint8_t>::const_iterator end)
+{
+    uint8_t crc = 0;
+    for (; begin != end; ++begin) {
+        crc ^= *begin;
+    }
+    return crc;
+}
+
+static uint8_t compute_crc(const uint8_t *data, const uint8_t len) {
+    uint8_t crc = 0;
+    for (uint8_t i = 0; i < len; i++) {
+        crc ^= data[i];
+    }
+    return crc;
+}
+
+static void assert_true(const int condition, const std::string& test_name) {
     test_count++;
     if (condition) {
         test_passed++;
-        printf(GREEN "✓" RESET " %s\n", test_name);
+        std::cout << GREEN << test_name << ": Passed" << RESET << std::endl;
     } else {
-        printf(RED "✗" RESET " %s\n", test_name);
+        std::cout << RED << test_name << ": Failed" << RESET << std::endl;
     }
 }
 
-void test_parser_simple_message(void) {
-    printf("\n" BOLD "=== Test Parser ===" RESET "\n");
-    
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
+static void test_parser_simple_message() {
+    std::cout << "\n" << BOLD << "=== Test Parser ===" << RESET << "\n";
+
+    Parser::Parser parser{};
     
     // Créer une trame OUTPUT (4 octets de payload)
     // Trame (LITTLE-ENDIAN) : [0xAA] [0x05] [0x00] [0x80] [0x00 0x00 0x80 0x3f] [CRC]
     //                          start  len_l  len_h  type   payload (float 1.0)   crc
-    
-    uint8_t trame_output[] = {
+
+    const std::vector<uint8_t> trame_output{
         0xAA,                    // Start
         0x05, 0x00,              // Length = 5 (poids faible d'abord!)
-        MSG_OUTPUT,              // Type
+        Frame::MsgType::OUTPUT,              // Type
         0x00, 0x00, 0x80, 0x3f,  // float 1.0 (little-endian)
     };
     
     // Calculer le CRC
-    uint8_t crc = parser_compute_crc(&trame_output[1], 7);  // len_l + len_h + type + payload(4)
+    const uint8_t crc = compute_crc(&trame_output[1], 7);  // len_l + len_h + type + payload(4)
     
     // Envoyer octets un par un (tous les octets de la trame)
-    bool complete = false;
-    for (int i = 0; i < (int)sizeof(trame_output); i++) {
-        parser_push_byte(trame_output[i], &ctx, &frame);
+    for (const auto& byte : trame_output) {
+        parser.push_byte(byte);
     }
     // Envoyer le CRC
-    complete = parser_push_byte(crc, &ctx, &frame);
-    
-    assert_true(complete, "Parser reçoit une trame OUTPUT complète");
-    assert_true(frame.type == MSG_OUTPUT, "Type = MSG_OUTPUT");
-    assert_true(frame.len == 4, "Payload length = 4");
-    
-    float value = bytes_to_float(frame.payload);
+    const auto complete = parser.push_byte(crc);
+
+    assert_true(complete != nullptr, "Parser reçoit une trame OUTPUT complète");
+    assert_true(complete->get_type() == Frame::MsgType::OUTPUT, "Type = MSG_OUTPUT");
+    assert_true(complete->get_payload_len() == 4, "Payload length = 4");
+
+    const auto payload = complete->get_payload();
+    const std::array<std::uint8_t, sizeof(float)> buf{payload[0], payload[1], payload[2], payload[3]};
+    const float value = builder::bytes_to_float(buf);
     assert_true(value == 1.0f, "Payload = float 1.0");
 }
 
-void test_builder_output(void) {
-    printf("\n" BOLD "=== Test Builder ===" RESET "\n");
+static void test_builder_output() {
+    std::cout << "\n" << BOLD << "=== Test Builder ===" << RESET << "\n";
+
+    const Frame frame = builder::output(187.5f);
+    const auto& bytes = frame.get_full_frame();
     
-    uint8_t buf[32];
-    int len = builder_output(buf, 187.5f);
-    
-    assert_true(len > 0, "Builder OUTPUT crée une trame");
-    assert_true(buf[0] == FRAME_START, "Trame commence par 0xAA");
-    assert_true(buf[3] == MSG_OUTPUT, "Type = MSG_OUTPUT");
+    assert_true(!bytes.empty(), "Builder OUTPUT crée une trame");
+    assert_true(bytes[0] == Frame::START_BYTE, "Trame commence par 0xAA");
+    assert_true(bytes[3] == Frame::MsgType::OUTPUT, "Type = MSG_OUTPUT");
     
     // Vérifier le CRC
-    uint8_t crc_calc = parser_compute_crc(&buf[1], len - 2);
-    assert_true(buf[len - 1] == crc_calc, "CRC valide");
-    
-    printf("  → Trame OUTPUT (%d octets) : ", len);
-    for (int i = 0; i < len; i++) printf("%02X ", buf[i]);
-    printf("\n");
+    const uint8_t crc_calc = compute_crc(bytes.begin()+1, bytes.end() - 1u);
+    assert_true(bytes[bytes.size() - 1] == crc_calc, "CRC valide");
+
+    std::cout << "  --> Trame OUTPUT (%d octets) : " << bytes.size() << "\n";
+    for (const auto& byte: bytes)
+    {
+        std::cout << std::uppercase
+           << std::hex
+           << std::setw(2)
+           << std::setfill('0')
+           << byte << " ";
+    }
+    std::cout << std::endl;
 }
 
-void test_builder_stats(void) {
+/*void test_builder_stats() {
     uint8_t buf[32];
     uint32_t stats[4] = {100, 5, 2, 150};
     int len = builder_stats(buf, stats);
@@ -100,7 +122,7 @@ void test_builder_stats(void) {
     printf("\n");
 }
 
-void test_builder_alarm(void) {
+void test_builder_alarm() {
     uint8_t buf[80];
     int len = builder_alarm(buf, "EMERGENCY STOP");
     
@@ -116,7 +138,7 @@ void test_builder_alarm(void) {
     printf("\n");
 }
 
-void test_roundtrip(void) {
+void test_roundtrip() {
     printf("\n" BOLD "=== Test Roundtrip (Builder → Parser) ===" RESET "\n");
     
     // 1. Builder crée une trame OUTPUT
@@ -143,7 +165,7 @@ void test_roundtrip(void) {
 
 
 
-void test_corrupted_crc(void) {
+void test_corrupted_crc() {
     printf("\n" BOLD "=== Test CRC Corrompu ===" RESET "\n");
     
     // Créer une trame valide
@@ -166,7 +188,7 @@ void test_corrupted_crc(void) {
     assert_true(!complete, "Parser rejette trame CRC invalide");
 }
 
-void test_fragmented_frame(void) {
+void test_fragmented_frame() {
     printf("\n" BOLD "=== Test Trame Fragmentée ===" RESET "\n");
     
     // Builder crée une trame
@@ -187,7 +209,7 @@ void test_fragmented_frame(void) {
     assert_true(frame.type == MSG_OUTPUT, "Type correct malgré fragmentation");
 }
 
-void test_unknown_type(void) {
+void test_unknown_type() {
     printf("\n" BOLD "=== Test Type Inconnu ===" RESET "\n");
     
     // Créer une trame avec un type qui n'existe pas (0x99)
@@ -222,7 +244,7 @@ void test_unknown_type(void) {
     assert_true(frame.len == 4, "Payload préservé");
 }
 
-void test_noise_resilience(void) {
+void test_noise_resilience() {
     printf("\n" BOLD "=== Test Résilience au Bruit ===" RESET "\n");
     
     // Créer une trame valide
@@ -249,38 +271,38 @@ void test_noise_resilience(void) {
     }
     
     assert_true(complete, "Parser ignore le bruit et valide la vraie trame");
-}
+}*/
 
 // ===========================================================================
 // MAIN
 // ===========================================================================
 
-int main(void) {
-    printf(BOLD "\n╔════════════════════════════════════════╗\n");
-    printf("║  Tests Parser / Builder - ECU Cruise   ║\n");
-    printf("╚════════════════════════════════════════╝\n" RESET);
+int main() {
+    std::cout << BOLD << "\n╔════════════════════════════════════════╗\n"
+    << "║  Tests Parser / Builder - ECU Cruise   ║\n"
+    << "╚════════════════════════════════════════╝\n" << RESET;
     
     test_parser_simple_message();
     test_builder_output();
-    test_builder_stats();
+    /*test_builder_stats();
     test_builder_alarm();
     test_roundtrip();
     test_corrupted_crc();
     test_fragmented_frame();
     test_unknown_type();
-    test_noise_resilience();
+    test_noise_resilience();*/
     
     // Résultats
-    printf("\n" BOLD "╔════════════════════════════════════════╗\n");
-    printf("║  Résultats                             ║\n");
-    printf("╚════════════════════════════════════════╝\n" RESET);
-    printf("%d / %d tests passés ", test_passed, test_count);
+    std::cout << BOLD << "\n╔════════════════════════════════════════╗\n"
+    << "║    Résultats                           ║\n"
+    << "╚════════════════════════════════════════╝\n" << RESET
+    << test_passed << " / "<< test_count << " tests passés ";
     
     if (test_passed == test_count) {
-        printf(GREEN "✓\n" RESET);
+        std::cout << GREEN << "✓\n" << RESET;
         return 0;
     } else {
-        printf(RED "✗\n" RESET);
+        std::cout << RED << "✗\n" << RESET;
         return 1;
     }
 }

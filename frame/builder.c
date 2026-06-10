@@ -1,15 +1,9 @@
 #include "builder.h"
 
-/**
- * Convertir float en 4 octets (big-endian IEEE 754)
- */
 void float_to_bytes(float f, uint8_t *buf) {
         memcpy(buf, &f, sizeof(float));  // le CPU est déjà little endian
 }
 
-/**
- * Convertir 4 octets en float
- */
 float bytes_to_float(uint8_t *buf) {
     float f;
     memcpy(&f, buf, sizeof(float));
