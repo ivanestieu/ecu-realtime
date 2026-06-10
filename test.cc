@@ -1,3 +1,4 @@
+#include <format>
 #include <iomanip>
 #include <iostream>
 
@@ -31,6 +32,24 @@ static uint8_t compute_crc(const uint8_t *data, const uint8_t len) {
         crc ^= data[i];
     }
     return crc;
+}
+
+static void print_frame_bytes(const std::vector<uint8_t>& bytes)
+{
+    // Trame (LITTLE-ENDIAN) : [0xAA] [0x05] [0x00] [0x80] [0x00 0x00 0x80 0x3f] [CRC]
+    //                          start  len_l  len_h  type   payload (float 1.0)   crc
+    std::cout << std::format("[{:02X}] [{:02X}] [{:02X}] [{:02X}] [", bytes[0],
+        bytes[1], bytes[2], bytes[3]);
+    for (size_t i = 4; i < bytes.size() - 1; i++)
+    {
+        std::cout
+           <<std::format("{:02X}", bytes[i]);
+        if (i < bytes.size() - 2)
+        {
+            std::cout << " ";
+        }
+    }
+    std::cout << std::format("] [{:02X}]\n", bytes[bytes.size() - 1]);
 }
 
 static void assert_true(const int condition, const std::string& test_name) {
@@ -87,191 +106,148 @@ static void test_builder_output() {
     
     assert_true(!bytes.empty(), "Builder OUTPUT crée une trame");
     assert_true(bytes[0] == Frame::START_BYTE, "Trame commence par 0xAA");
-    assert_true(bytes[3] == Frame::MsgType::OUTPUT, "Type = MSG_OUTPUT");
+    assert_true(bytes[3] == Frame::MsgType::OUTPUT, "Type = OUTPUT");
     
     // Vérifier le CRC
     const uint8_t crc_calc = compute_crc(bytes.begin()+1, bytes.end() - 1u);
     assert_true(bytes[bytes.size() - 1] == crc_calc, "CRC valide");
 
     std::cout << "  --> Trame OUTPUT (%d octets) : " << bytes.size() << "\n";
-    for (const auto& byte: bytes)
-    {
-        std::cout << std::uppercase
-           << std::hex
-           << std::setw(2)
-           << std::setfill('0')
-           << byte << " ";
-    }
-    std::cout << std::endl;
+    print_frame_bytes(bytes);
 }
 
-/*void test_builder_stats() {
-    uint8_t buf[32];
-    uint32_t stats[4] = {100, 5, 2, 150};
-    int len = builder_stats(buf, stats);
-    
-    assert_true(len > 0, "Builder STATS crée une trame");
-    assert_true(buf[0] == FRAME_START, "Trame commence par 0xAA");
-    assert_true(buf[3] == MSG_STATS, "Type = MSG_STATS");
-    
-    uint8_t crc_calc = parser_compute_crc(&buf[1], len - 2);
-    assert_true(buf[len - 1] == crc_calc, "CRC valide");
-    
-    printf("  → Trame STATS (%d octets) : ", len);
-    for (int i = 0; i < len; i++) printf("%02X ", buf[i]);
-    printf("\n");
+static void test_builder_stats() {
+    const std::vector<uint32_t> stats{100, 5, 2, 150};
+    const Frame frame = builder::stats(stats);
+    const auto& bytes = frame.get_full_frame();
+
+    assert_true(!bytes.empty(), "Builder STATS crée une trame");
+    assert_true(bytes[0] == Frame::START_BYTE, "Trame commence par 0xAA");
+    assert_true(bytes[3] == Frame::MsgType::STATS, "Type = STATS");
+
+    const uint8_t crc_calc = compute_crc(bytes.begin()+1, bytes.end() - 1u);
+    assert_true(bytes[bytes.size() - 1] == crc_calc, "CRC valide");
+
+    std::cout << "  --> Trame OUTPUT (%d octets) : " << bytes.size() << "\n";
+    print_frame_bytes(bytes);
 }
 
-void test_builder_alarm() {
-    uint8_t buf[80];
-    int len = builder_alarm(buf, "EMERGENCY STOP");
-    
-    assert_true(len > 0, "Builder ALARM crée une trame");
-    assert_true(buf[0] == FRAME_START, "Trame commence par 0xAA");
-    assert_true(buf[3] == MSG_ALARM, "Type = MSG_ALARM");
-    
-    uint8_t crc_calc = parser_compute_crc(&buf[1], len - 2);
-    assert_true(buf[len - 1] == crc_calc, "CRC valide");
-    
-    printf("  → Trame ALARM (%d octets) : ", len);
-    for (int i = 0; i < len; i++) printf("%02X ", buf[i]);
-    printf("\n");
+static void test_builder_alarm() {
+    const Frame frame = builder::alarm("EMERGENCY STOP");
+    const auto& bytes = frame.get_full_frame();
+
+    assert_true(!bytes.empty(), "Builder ALARM crée une trame");
+    assert_true(bytes[0] == Frame::START_BYTE, "Trame commence par 0xAA");
+    assert_true(bytes[3] == Frame::MsgType::ALARM, "Type = ALARM");
+
+    const uint8_t crc_calc = compute_crc(bytes.begin()+1, bytes.end() - 1u);
+    assert_true(bytes[bytes.size() - 1] == crc_calc, "CRC valide");
+
+    std::cout << "  --> Trame OUTPUT (%d octets) : " << bytes.size() << "\n";
+    print_frame_bytes(bytes);
 }
 
-void test_roundtrip() {
-    printf("\n" BOLD "=== Test Roundtrip (Builder → Parser) ===" RESET "\n");
+static void test_roundtrip() {
+    std::cout << BOLD << "\n=== Test Roundtrip (Builder → Parser) ===\n" << RESET;
     
     // 1. Builder crée une trame OUTPUT
-    uint8_t buf[32];
-    int len = builder_output(buf, 250.75f);
-    
+    const Frame frame = builder::output(250.75f);
+    const auto& bytes = frame.get_full_frame();
+
     // 2. Parser reçoit les octets un par un
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
-    
-    bool complete = false;
-    for (int i = 0; i < len; i++) {
-        complete = parser_push_byte(buf[i], &ctx, &frame);
+    Parser::Parser parser{};
+
+    std::unique_ptr<Frame> complete = nullptr;
+    for (const auto& byte : bytes) {
+        complete = parser.push_byte(byte);
     }
     
-    assert_true(complete, "Parser valide la trame");
-    assert_true(frame.type == MSG_OUTPUT, "Type préservé");
-    assert_true(frame.len == 4, "Longueur payload préservée");
-    
-    float value = bytes_to_float(frame.payload);
-    assert_true(value == 250.75f, "Valeur float préservée");
+    assert_true(complete != nullptr, "Parser reçoit une trame OUTPUT complète");
+    assert_true(complete->get_type() == Frame::MsgType::OUTPUT, "Type = MSG_OUTPUT");
+    assert_true(complete->get_payload_len() == 4, "Payload length = 4");
+
+    const auto payload = complete->get_payload();
+    const std::array<std::uint8_t, sizeof(float)> buf{payload[0], payload[1], payload[2], payload[3]};
+    const float value = builder::bytes_to_float(buf);
+    assert_true(value == 250.75f, "Payload = float 250.75");
 }
 
+static void test_corrupted_crc() {
+    std::cout << BOLD << "\n=== Test CRC Corrompu ===\n" << RESET;
 
+    // 1. Builder crée une trame OUTPUT
+    const Frame frame = builder::output(100.0f);
+    auto bytes = frame.get_full_frame();
+    bytes[bytes.size() - 1] ^= 0xFF;
 
-void test_corrupted_crc() {
-    printf("\n" BOLD "=== Test CRC Corrompu ===" RESET "\n");
-    
-    // Créer une trame valide
-    uint8_t buf[32];
-    int len = builder_output(buf, 100.0f);
-    
-    // Corrompre le CRC
-    buf[len - 1] ^= 0xFF;
-    
-    // Parser reçoit la trame corrompue
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
-    
-    bool complete = false;
-    for (int i = 0; i < len; i++) {
-        complete = parser_push_byte(buf[i], &ctx, &frame);
+    // 2. Parser reçoit les octets un par un
+    Parser::Parser parser{};
+
+    std::unique_ptr<Frame> complete = nullptr;
+    for (const auto& byte : bytes) {
+        complete = parser.push_byte(byte);
     }
-    
-    assert_true(!complete, "Parser rejette trame CRC invalide");
+
+    assert_true(complete == nullptr, "Parser ne considère pas la trame comme complète");
 }
 
-void test_fragmented_frame() {
-    printf("\n" BOLD "=== Test Trame Fragmentée ===" RESET "\n");
-    
-    // Builder crée une trame
-    uint8_t buf[32];
-    int len = builder_output(buf, 75.5f);
-    
-    // Parser reçoit les octets avec des "trous" (simulation de délai)
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
-    
-    bool complete = false;
-    for (int i = 0; i < len; i++) {
-        complete = parser_push_byte(buf[i], &ctx, &frame);
-    }
-    
-    assert_true(complete, "Parser reconstruit trame fragmentée");
-    assert_true(frame.type == MSG_OUTPUT, "Type correct malgré fragmentation");
-}
+static void test_unknown_type() {
+    std::cout << BOLD << "\n=== Test Type Inconnu ===\n" << RESET;
 
-void test_unknown_type() {
-    printf("\n" BOLD "=== Test Type Inconnu ===" RESET "\n");
-    
     // Créer une trame avec un type qui n'existe pas (0x99)
-    uint8_t buf[32];
-    int idx = 0;
-    buf[idx++] = FRAME_START;
-    buf[idx++] = 0x05;  // len_l
-    buf[idx++] = 0x00;  // len_h
-    buf[idx++] = 0x99;  // type INCONNU
-    buf[idx++] = 0x12;  // payload
-    buf[idx++] = 0x34;
-    buf[idx++] = 0x56;
-    buf[idx++] = 0x78;
-    
+    std::vector<uint8_t> bytes{};
+    bytes.push_back(Frame::START_BYTE);
+    bytes.push_back(0x05);
+    bytes.push_back(0x00);
+    bytes.push_back(0x99);
+    bytes.push_back(0x12);
+    bytes.push_back(0x34);
+    bytes.push_back(0x56);
+    bytes.push_back(0x78);
+
     // Calculer le CRC
-    uint8_t crc = parser_compute_crc(&buf[1], 7);
-    buf[idx++] = crc;
+    uint8_t crc = compute_crc(&bytes[1], 7);
+    bytes.push_back(crc);
     
-    // Parser reçoit la trame avec type inconnu
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
-    
-    bool complete = false;
-    for (int i = 0; i < idx; i++) {
-        complete = parser_push_byte(buf[i], &ctx, &frame);
+    Parser::Parser parser{};
+
+    std::unique_ptr<Frame> complete = nullptr;
+    for (const auto& byte : bytes) {
+        complete = parser.push_byte(byte);
     }
-    
     // Le parser doit ACCEPTER la trame (c'est au niveau au-dessus de rejeter)
-    assert_true(complete, "Parser accepte type inconnu (validation au niveau app)");
-    assert_true(frame.type == 0x99, "Type inconnu préservé");
-    assert_true(frame.len == 4, "Payload préservé");
+    assert_true(complete != nullptr, "Parser reçoit une trame OUTPUT complète");
+    assert_true(complete->get_type() == 0x99, "Type = MSG_OUTPUT");
+    assert_true(complete->get_payload_len() == 4, "Payload length = 4");
+
 }
 
 void test_noise_resilience() {
-    printf("\n" BOLD "=== Test Résilience au Bruit ===" RESET "\n");
-    
+    std::cout << BOLD << "\n=== Test Résilience au Bruit ===\n" << RESET;
+
     // Créer une trame valide
-    uint8_t buf[32];
-    int len = builder_output(buf, 123.45f);
-    
+    const Frame frame = builder::output(100.0f);
+    auto bytes = frame.get_full_frame();
+
     // Parser reçoit du bruit, puis la trame valide SANS réinitialisation manuelle
-    parser_ctx_t ctx;
-    frame_t frame;
-    parser_init(&ctx);
-    
+    Parser::Parser parser{};
+
     // Envoyer du bruit qui n'inclut pas 0xAA (le parser doit ignorer)
-    parser_push_byte(0xFF, &ctx, &frame);
-    parser_push_byte(0x55, &ctx, &frame);
-    parser_push_byte(0x99, &ctx, &frame);
-    parser_push_byte(0x42, &ctx, &frame);
-    parser_push_byte(0xDE, &ctx, &frame);
-    
+    parser.push_byte(0xFF);
+    parser.push_byte(0x55);
+    parser.push_byte(0x99);
+    parser.push_byte(0x42);
+    parser.push_byte(0xDE);
+    std::unique_ptr<Frame> complete = nullptr;
+    for (const auto& byte : bytes) {
+        complete = parser.push_byte(byte);
+    }
+
     // Maintenant envoyer la vraie trame directement
     // Le parser doit chercher le prochain 0xAA et reconstruire la trame
-    bool complete = false;
-    for (int i = 0; i < len; i++) {
-        complete = parser_push_byte(buf[i], &ctx, &frame);
-    }
-    
-    assert_true(complete, "Parser ignore le bruit et valide la vraie trame");
-}*/
+
+    assert_true(complete != nullptr, "Parser ignore le bruit et valide la vraie trame");
+}
 
 // ===========================================================================
 // MAIN
@@ -284,13 +260,12 @@ int main() {
     
     test_parser_simple_message();
     test_builder_output();
-    /*test_builder_stats();
+    test_builder_stats();
     test_builder_alarm();
     test_roundtrip();
     test_corrupted_crc();
-    test_fragmented_frame();
     test_unknown_type();
-    test_noise_resilience();*/
+    test_noise_resilience();
     
     // Résultats
     std::cout << BOLD << "\n╔════════════════════════════════════════╗\n"

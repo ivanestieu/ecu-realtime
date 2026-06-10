@@ -7,12 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # add_subdirectory(libyaka)
 
-add_executable(ecu
-        main.cc
+add_executable(test
+        test.cc
         frame/builder.cc
         frame/parser.cc
 )
-target_compile_options(ecu PRIVATE -Wall -Wextra -Werror -pedantic -Wold-style-cast)
+target_compile_options(test PRIVATE -Wall -Wextra -Werror -pedantic -Wold-style-cast)
 
 # target_link_libraries(ecu PRIVATE yaka)
 
