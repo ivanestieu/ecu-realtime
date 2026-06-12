@@ -1,7 +1,5 @@
 #include "parser.hh"
 
-#include <memory>
-
 namespace Parser
 {
     Parser::Parser()
@@ -9,13 +7,13 @@ namespace Parser
         , frame_len_(0)
         , crc_calc_(0)
         , type_(0)
-        , current_frame_{}
+        , current_frame_{ std::nullopt }
     {}
 
-    std::uint8_t compute_crc(const std::vector<std::uint8_t>& data)
+    std::uint8_t compute_crc(const std::array<std::uint8_t, Frame::FRAME_MAX_SIZE>& data, const unsigned int size)
     {
         std::uint8_t crc = 0;
-        for (size_t i = 1; i < data.size(); ++i)
+        for (size_t i = 1; i < size; ++i)
         {
             crc ^= data[i];
         }
@@ -28,10 +26,10 @@ namespace Parser
         frame_len_ = 0;
         crc_calc_ = 0;
         type_ = 0;
-        current_frame_ = nullptr;
+        current_frame_ = std::nullopt;
     }
 
-    std::unique_ptr<Frame> Parser::push_byte(const uint8_t byte)
+    std::optional<Frame> Parser::push_byte(const uint8_t byte)
     {
         switch (state_)
         {
@@ -48,6 +46,6 @@ namespace Parser
         case State::CRC:
             return handle_crc(byte);
         }
-        return nullptr;
+        return std::nullopt;
     }
 } // namespace Parser
