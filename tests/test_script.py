@@ -4,6 +4,7 @@ import struct
 import time
 import random
 import threading
+from datetime import datetime
 
 # --- CONFIGURATION ---
 SERIAL_PORT = '/dev/ttyUSB0' # À adapter
@@ -23,6 +24,12 @@ MSG_OUTPUT = 0x80
 MSG_STATS = 0x83
 MSG_ALARM = 0x85
 
+# --- LOG FILE SETUP ---
+LOG_DIR = "esp32_logs"
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+LOG_FILE = os.path.join(LOG_DIR, f"esp32_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
 class ECUTester:
     def __init__(self):
         self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=TIMEOUT)
@@ -32,6 +39,14 @@ class ECUTester:
         self.running = True
         self.stats_count = 0
         self.start_time = time.time()
+        self.log_file = open(LOG_FILE, 'w', buffering=1)  # Line-buffered
+
+    def _log(self, message):
+        """Write message to both console and log file with timestamp"""
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')
+        formatted_msg = f"[{timestamp}] {message}"
+        self.log_file.write(formatted_msg + '\n')
+        self.log_file.flush()
 
     def update_vehicle_model(self, dt):
         """Modèle 1er ordre: accel = moteur - traînée."""
@@ -60,13 +75,29 @@ class ECUTester:
         self.ser.write(frame)
 
     def receive_feedback(self):
-        """Lit et décode les messages venant de l'ECU (Output et Télémétrie)"""
+        """Lit et décode les messages venant de l'ECU (Output et Télémétrie)
+        Capture également les logs texte ESP-IDF"""
+        raw_buffer = b''  # Buffer pour logs texte potentiels
+
         while self.running:
             if self.ser.in_waiting > 0:
-                start_byte = self.ser.read(1)
-                if start_byte == b'\xaa':
+                byte = self.ser.read(1)
+                if not byte:
+                    continue
+
+                # Vérifier si c'est le début d'une trame structurée
+                if byte == b'\xaa':
+                    # Flush any accumulated text first
+                    if raw_buffer:
+                        text = raw_buffer.decode('utf-8', errors='ignore').strip()
+                        if text:
+                            self._log(f"[ESP32 LOG] {text}")
+                        raw_buffer = b''
+
+                    # Parse structured message
                     len_bytes = self.ser.read(2)
-                    if len(len_bytes) < 2: continue
+                    if len(len_bytes) < 2:
+                        continue
                     length = struct.unpack('<H', len_bytes)[0]
 
                     data = self.ser.read(length)
@@ -86,7 +117,20 @@ class ECUTester:
                                 print(f"[TELEMETRIE] Reçue ({self.stats_count}s)")
 
                             elif msg_type == MSG_ALARM:
-                                print(f"\n[ALERTE ECU] : {payload.decode(errors='ignore')}") 
+                                print(f"\n[ALERTE ECU] : {payload.decode(errors='ignore')}")
+                else:
+                    # Accumulate potentially readable text
+                    raw_buffer += byte
+
+                    # If buffer is getting large or contains newline, try to decode
+                    if b'\n' in raw_buffer or len(raw_buffer) > 256:
+                        lines = raw_buffer.split(b'\n')
+                        for line in lines[:-1]:
+                            text = line.decode('utf-8', errors='ignore').strip()
+                            if text:
+                                self._log(f"[ESP32 LOG] {text}")
+                        # Keep the incomplete line for next iteration
+                        raw_buffer = lines[-1]
 
     def run_normal_operation(self, duration):  
         """Phase de fonctionnement normal (100ms cycle) """
@@ -109,7 +153,7 @@ class ECUTester:
     def run_stress_test(self):
         """Phase de stress : messages corrompus, fragmentés et flood"""
         print("\n--- DÉBUT PHASE DE STRESS ---")
-    
+
         # 1. Flood de messages (Surcharge CPU)
         print("Action: Surcharge CPU (Flood)...")
         for _ in range(50):
@@ -149,6 +193,7 @@ class ECUTester:
             pass
         finally:
             self.running = False
+            self.log_file.close()
             self.ser.close()
             print("\nTest terminé.")
 

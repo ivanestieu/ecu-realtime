@@ -4,33 +4,14 @@ extern "C"
 #include "freertos/semphr.h"
 }
 
+#include "utils/ecu_mode.hh"
+#include "utils/mutex_guard.hh"
+#include "utils/safe_esp_log.hh"
 #include "shared_memory.hh"
 
 namespace
 {
     SemaphoreHandle_t g_mutex;
-
-    class MutexGuard
-    {
-    public:
-        explicit MutexGuard(const SemaphoreHandle_t handle) : handle_{handle}
-        {
-            xSemaphoreTake(handle_, portMAX_DELAY);
-        }
-
-        ~MutexGuard()
-        {
-            xSemaphoreGive(handle_);
-        }
-
-        MutexGuard(const MutexGuard&) = delete;
-        MutexGuard& operator=(const MutexGuard&) = delete;
-        MutexGuard(MutexGuard&&) = delete;
-        MutexGuard& operator=(MutexGuard&&) = delete;
-
-    private:
-        SemaphoreHandle_t handle_;
-    };
 
     float s_speed = 0.0f;
     float s_setpoint = 0.0f;
@@ -77,7 +58,13 @@ namespace SharedMemory
     void set_mode(const std::uint8_t v)
     {
         MutexGuard lock(g_mutex);
+        const auto old_mode = s_mode;
         s_mode = v;
+        if (old_mode != v)
+        {
+            ESP_LOGI(__FILE_NAME__, "SharedMemory: Mode changed from %s to %s",
+                     mode_to_string(old_mode), mode_to_string(v));
+        }
     }
 
     std::uint8_t get_mode()
@@ -157,4 +144,4 @@ namespace SharedMemory
         MutexGuard lock(g_mutex);
         return s_stats_output;
     }
-} // namespaSharedMemory
+} // namespace SharedMemory

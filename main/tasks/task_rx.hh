@@ -1,3 +1,3 @@
 #pragma once
 
-void task_rx(void* params);
+[[noreturn]] void task_rx(void* params);

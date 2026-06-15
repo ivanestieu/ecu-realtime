@@ -7,10 +7,10 @@ extern "C"
 }
 #include <string>
 
-#include "ecu_mode.hh"
+#include "utils/ecu_mode.hh"
+#include "utils/safe_esp_log.hh"
 #include "frame/builder.hh"
 #include "frame/frame.hh"
-#include "frame/parser.hh"
 #include "shared_memory/shared_memory.hh"
 #include "task_failsafe.hh"
 
@@ -19,7 +19,7 @@ static TaskHandle_t failsafe_task_handle = nullptr;
 
 // Notification values pour distinguer les deux déclencheurs
 static constexpr unsigned int NOTIFY_TIMEOUT = (1 << 0);
-static constexpr unsigned int NOTIFY_GPIO = (1 << 1);
+static constexpr unsigned int NOTIFY_GPIO = (2 << 1);
 
 void IRAM_ATTR failsafe_gpio_isr_handler(__attribute__((unused))void* arg)
 {
@@ -31,15 +31,21 @@ void IRAM_ATTR failsafe_gpio_isr_handler(__attribute__((unused))void* arg)
 
 static void trigger_failsafe(const char* reason)
 {
+    ESP_LOGI(__FILE_NAME__, "FAILSAFE TRIGGERED: %s", reason);
+
+    SharedMemory::set_output(0.0f);
+
     SharedMemory::set_mode(ECUMode::OFF);
 
     const Frame frame = builder::alarm(std::string(reason));
     const auto& frame_bytes = frame.get_full_frame();
     uart_write_bytes(UART_NUM_0, frame_bytes.data(), frame_bytes.size());
+    ESP_LOGI(__FILE_NAME__, "Failsafe alarm frame sent (%d bytes)", frame_bytes.size());
 }
 
-void task_failsafe(__attribute__((unused))void* params)
+[[noreturn]] void task_failsafe(__attribute__((unused))void* params)
 {
+    ESP_LOGI(__FILE_NAME__, "task_failsafe: Starting failsafe monitor");
     failsafe_task_handle = xTaskGetCurrentTaskHandle();
 
     while (true)

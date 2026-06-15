@@ -7,12 +7,14 @@ extern "C"
 #include <cstring>
 
 #include "frame/frame.hh"
+#include "utils/safe_esp_log.hh"
 #include "frame/parser.hh"
 #include "shared_memory/shared_memory.hh"
 #include "task_rx.hh"
 
-void task_rx(__attribute__((unused))void* params)
+[[noreturn]] void task_rx(__attribute__((unused))void* params)
 {
+    ESP_LOGI(__FILE_NAME__, "task_rx: Starting frame reception");
     Parser::Parser parser{};
 
     while (true)
@@ -43,6 +45,7 @@ void task_rx(__attribute__((unused))void* params)
                 float speed;
                 memcpy(&speed, payload.data(), sizeof(float));
                 SharedMemory::set_speed(speed);
+                ESP_LOGI(__FILE_NAME__, "task_rx: SPEED frame received: %.2f km/h", speed);
             }
             break;
         }
@@ -52,17 +55,21 @@ void task_rx(__attribute__((unused))void* params)
                 float setpoint;
                 memcpy(&setpoint, payload.data(), sizeof(float));
                 SharedMemory::set_setpoint(setpoint);
+                ESP_LOGI(__FILE_NAME__, "task_rx: SETPOINT frame received: %.2f km/h", setpoint);
             }
             break;
         }
         case Frame::MsgType::MODE_SET: {
             if (payload.size() >= sizeof(uint8_t))
             {
-                SharedMemory::set_mode(payload[0]);
+                const auto new_mode = payload[0];
+                SharedMemory::set_mode(new_mode);
+                ESP_LOGI(__FILE_NAME__, "task_rx: MODE_SET frame received: mode=%d", new_mode);
             }
             break;
         }
         default:
+            ESP_LOGI(__FILE_NAME__, "task_rx: Unknown frame type received");
             break;
         }
     }

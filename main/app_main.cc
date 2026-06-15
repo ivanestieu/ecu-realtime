@@ -2,14 +2,16 @@ extern "C"
 {
 #include "driver/gpio.h"
 #include "driver/uart.h"
-#include "esp_log.h"
 #include "freertos/task.h"
 }
+#include "utils/safe_esp_log.hh"
 #include "shared_memory/shared_memory.hh"
 #include "tasks/task_failsafe.hh"
 #include "tasks/task_pid.hh"
 #include "tasks/task_rx.hh"
 #include "tasks/task_telemetry.hh"
+
+static constexpr int KiB = 1 << 10;
 
 /**
  * Initialize UART0 for communication with PC
@@ -83,20 +85,20 @@ extern "C" void app_main(void)
     // 4. Create FreeRTOS tasks
 
     // task_rx: high priority (4), continuous UART reading
-    xTaskCreate(task_rx, "task_rx", 4096, nullptr, 4, nullptr);
-    ESP_LOGI(__FILE_NAME__, "task_rx created (priority 4, stack 4KB)");
+    xTaskCreate(task_rx, "task_rx", 4 * KiB, nullptr, 3, nullptr);
+    ESP_LOGI(__FILE_NAME__, "task_rx created (priority 3, stack 4KB)");
 
     // task_pid: high priority (4), strict 100ms period
-    xTaskCreate(task_pid, "task_pid", 3072, nullptr, 4, nullptr);
+    xTaskCreate(task_pid, "task_pid", 3 * KiB, nullptr, 4, nullptr);
     ESP_LOGI(__FILE_NAME__,
              "task_pid created (priority 4, stack 3KB, 100ms period)");
 
     // task_failsafe: max priority (5), event-driven safety
-    xTaskCreate(task_failsafe, "task_failsafe", 2048, nullptr, 5, nullptr);
+    xTaskCreate(task_failsafe, "task_failsafe", 2 * KiB, nullptr, 5, nullptr);
     ESP_LOGI(__FILE_NAME__, "task_failsafe created (priority 5, stack 2KB)");
 
     // task_telemetry: low priority (2), 1s statistics
-    xTaskCreate(task_telemetry, "task_telemetry", 2048, nullptr, 2, nullptr);
+    xTaskCreate(task_telemetry, "task_telemetry", 2 * KiB, nullptr, 2, nullptr);
     ESP_LOGI(__FILE_NAME__,
              "task_telemetry created (priority 2, stack 2KB, 1s period)");
 

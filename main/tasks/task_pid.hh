@@ -1,3 +1,3 @@
 #pragma once
 
-void task_pid(void* params);
+[[noreturn]] void task_pid(void* params);

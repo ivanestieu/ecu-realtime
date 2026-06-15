@@ -1,3 +1,3 @@
 #pragma once
 
-void task_telemetry(void* params);
+[[noreturn]] void task_telemetry(void* params);

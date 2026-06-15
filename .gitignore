@@ -4,3 +4,5 @@ build/
 .idea/
 
 *.o
+
+esp32_logs/
