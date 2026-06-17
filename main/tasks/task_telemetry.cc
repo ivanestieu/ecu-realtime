@@ -6,11 +6,12 @@ extern "C"
 }
 
 #include "frame/builder.hh"
-#include "../frame/frame.hh"
+#include "frame/frame.hh"
 #include "shared_memory/shared_memory.hh"
 #include "task_telemetry.hh"
+#include "task_uart_emitter.hh"
 
-[[noreturn]] void task_telemetry(__attribute__((unused))void* params)
+[[noreturn]] void task_telemetry(__attribute__((unused)) void* params)
 {
     TickType_t last_wake = xTaskGetTickCount();
 
@@ -25,12 +26,11 @@ extern "C"
             SharedMemory::get_stats_output(),
         };
 
-        ESP_LOGI(__FILE_NAME__,
-                 "task_telemetry: valid=%u, corrupted=%u, dropped=%u, output=%u",
-                 stats[0], stats[1], stats[2], stats[3]);
+        ESP_LOGI(
+            __FILE_NAME__,
+            "task_telemetry: valid=%u, corrupted=%u, dropped=%u, output=%u",
+            stats[0], stats[1], stats[2], stats[3]);
 
-        Frame frame = builder::stats(stats);
-        const auto& frame_bytes = frame.get_full_frame();
-        uart_write_bytes(UART_NUM_0, frame_bytes.data(), frame_bytes.size());
+        uart_emit_frame(builder::stats(stats));
     }
 }

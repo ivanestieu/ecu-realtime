@@ -9,7 +9,7 @@ namespace builder
     static constexpr unsigned int STATS_SIZE = 4;
 
     Frame output(float command);
-    Frame stats(const std::array<uint32_t, STATS_SIZE> &stats);
+    Frame stats(const std::array<uint32_t, STATS_SIZE>& stats);
     Frame alarm(const std::string& message);
     Frame debug(const std::string& message);
     std::array<std::uint8_t, sizeof(float)> float_to_bytes(float f);

@@ -8,10 +8,11 @@ namespace Parser
         , crc_calc_(0)
         , type_(0)
         , current_frame_{ std::nullopt }
-    {
-    }
+    {}
 
-    std::uint8_t compute_crc(const std::array<std::uint8_t, Frame::FRAME_MAX_SIZE>& data, const unsigned int size)
+    std::uint8_t
+    compute_crc(const std::array<std::uint8_t, Frame::FRAME_MAX_SIZE>& data,
+                const unsigned int size)
     {
         std::uint8_t crc = 0;
         for (size_t i = 1; i < size; ++i)

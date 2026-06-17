@@ -16,7 +16,9 @@ namespace Parser
         CRC, // Read and verify CRC
     };
 
-    std::uint8_t compute_crc(const std::array<std::uint8_t, Frame::FRAME_MAX_SIZE>& data, unsigned int size);
+    std::uint8_t
+    compute_crc(const std::array<std::uint8_t, Frame::FRAME_MAX_SIZE>& data,
+                unsigned int size);
 
     class Parser
     {

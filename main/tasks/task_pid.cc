@@ -1,3 +1,5 @@
+#include "task_uart_emitter.hh"
+
 extern "C"
 {
 #include "driver/uart.h"
@@ -5,15 +7,15 @@ extern "C"
 #include "freertos/task.h"
 }
 
-#include "utils/ecu_mode.hh"
-#include "utils/safe_esp_log.hh"
 #include "frame/builder.hh"
 #include "frame/frame.hh"
 #include "pid/pid.hh"
 #include "shared_memory/shared_memory.hh"
 #include "task_pid.hh"
+#include "utils/ecu_mode.hh"
+#include "utils/safe_esp_log.hh"
 
-[[noreturn]] void task_pid(__attribute__((unused))void* params)
+[[noreturn]] void task_pid(__attribute__((unused)) void* params)
 {
     ESP_LOGI(__FILE_NAME__, "task_pid: Starting PID control loop");
     PID pid{};
@@ -33,12 +35,11 @@ extern "C"
             output = pid.compute(setpoint, speed, 0.1f);
 
             ESP_LOGI(__FILE_NAME__,
-                     "task_pid: speed=%.2f, setpoint=%.2f, output=%.2f",
-                     speed, setpoint, output);
+                     "task_pid: speed=%.2f, setpoint=%.2f, output=%.2f", speed,
+                     setpoint, output);
         }
         else
         {
-            // Safety: force output to 0 when not in AUTO mode (failsafe/OFF mode)
             ESP_LOGI(__FILE_NAME__,
                      "task_pid: mode is not AUTO, forcing output to 0.0");
         }
@@ -48,10 +49,6 @@ extern "C"
         {
             SharedMemory::inc_stats_output();
         }
-
-        // Always send the output frame, even when output is 0 (safety feedback)
-        Frame frame = builder::output(output);
-        const auto& frame_bytes = frame.get_full_frame();
-        uart_write_bytes(UART_NUM_0, frame_bytes.data(), frame_bytes.size());
+        uart_emit_frame(builder::output(output));
     }
 }

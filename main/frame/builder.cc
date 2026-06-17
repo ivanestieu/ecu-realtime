@@ -1,8 +1,9 @@
+#include "builder.hh"
+
 #include <array>
 #include <bit>
 
-#include "../utils/safe_esp_log.hh"
-#include "builder.hh"
+#include "utils/safe_esp_log.hh"
 
 namespace builder
 {
@@ -28,19 +29,9 @@ namespace builder
         return frame;
     }
 
-    Frame stats(const std::array<std::uint32_t, STATS_SIZE> &stats)
+    Frame stats(const std::array<std::uint32_t, STATS_SIZE>& stats)
     {
-        unsigned int expected_size = sizeof(std::uint32_t) * stats.size();
-        if (expected_size >= Frame::FRAME_MAX_SIZE)
-        {
-            ESP_LOGI(__FILE_NAME__,
-                     "builder::stats: trimming payload size to stay underneath "
-                     "Frame::FRAME_MAX_SIZE (%d)",
-                     Frame::FRAME_MAX_SIZE);
-            expected_size = Frame::FRAME_MAX_SIZE;
-        }
-        Frame frame{ Frame::MsgType::STATS,
-                     static_cast<uint16_t>(expected_size) };
+        Frame frame{ Frame::MsgType::STATS, STATS_SIZE};
 
         for (const uint32_t& val : stats)
         {

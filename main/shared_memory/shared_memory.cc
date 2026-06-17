@@ -4,10 +4,9 @@ extern "C"
 #include "freertos/semphr.h"
 }
 
-#include "utils/ecu_mode.hh"
+#include "shared_memory.hh"
 #include "utils/mutex_guard.hh"
 #include "utils/safe_esp_log.hh"
-#include "shared_memory.hh"
 
 namespace
 {
@@ -58,13 +57,7 @@ namespace SharedMemory
     void set_mode(const std::uint8_t v)
     {
         MutexGuard lock(g_mutex);
-        const auto old_mode = s_mode;
         s_mode = v;
-        if (old_mode != v)
-        {
-            ESP_LOGI(__FILE_NAME__, "SharedMemory: Mode changed from %s to %s",
-                     mode_to_string(old_mode), mode_to_string(v));
-        }
     }
 
     std::uint8_t get_mode()

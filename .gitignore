@@ -6,3 +6,5 @@ build/
 *.o
 
 esp32_logs/
+__pycache__/
+.venv/

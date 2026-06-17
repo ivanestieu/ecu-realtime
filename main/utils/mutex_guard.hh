@@ -1,6 +1,7 @@
 #pragma once
 
-extern "C" {
+extern "C"
+{
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 }
@@ -8,7 +9,8 @@ extern "C" {
 class MutexGuard
 {
 public:
-    explicit MutexGuard(const SemaphoreHandle_t handle) : handle_{handle}
+    explicit MutexGuard(const SemaphoreHandle_t handle)
+        : handle_{ handle }
     {
         xSemaphoreTake(handle_, portMAX_DELAY);
     }

@@ -8,6 +8,7 @@ idf_component_register(
         "tasks/task_pid.cc"
         "tasks/task_rx.cc"
         "tasks/task_telemetry.cc"
+        "tasks/task_uart_emitter.cc"
 
         INCLUDE_DIRS
         "."

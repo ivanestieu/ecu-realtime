@@ -1,10 +1,10 @@
 import os
-import serial
-import struct
-import time
 import random
+import struct
 import threading
+import time
 from datetime import datetime
+import serial
 
 # --- CONFIGURATION ---
 SERIAL_PORT = '/dev/ttyUSB0' # À adapter
@@ -30,16 +30,87 @@ if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 LOG_FILE = os.path.join(LOG_DIR, f"esp32_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
 
+class FrameHandler:
+    """Handles frame-level protocol: CRC computation, frame serialization, and parsing"""
+    
+    def __init__(self, serial_port):
+        """
+        Args:
+            serial_port: Serial port object for communication
+        """
+        self.ser = serial_port
+    
+    def compute_crc(self, data_bytes):
+        """Calcule le CRC par XOR de tous les octets sauf le START"""
+        crc = 0
+        for b in data_bytes:
+            crc ^= b
+        return crc
+    
+    def send_frame(self, msg_type, payload=b''):
+        """Construit et envoie une trame au format: [0xAA][LEN][TYPE][PAYLOAD][CRC]"""
+        length = len(payload) + 1  # LEN: Taille de (TYPE + PAYLOAD)
+        header = struct.pack('<HB', length, msg_type)
+        full_msg = header + payload
+        crc = self.compute_crc(full_msg)
+        frame = struct.pack('B', 0xAA) + full_msg + struct.pack('B', crc)
+        self.ser.write(frame)
+    
+    def receive_frame(self):
+        """
+        Reads and parses a single frame from serial port.
+        Returns: (msg_type, payload) tuple if valid frame received, None otherwise
+        Also returns raw text bytes that don't belong to structured frames.
+        Returns: (msg_type, payload, raw_text) or (None, None, raw_text) if no valid frame
+        """
+        raw_buffer = b''
+        
+        while True:
+            if self.ser.in_waiting > 0:
+                byte = self.ser.read(1)
+                if not byte:
+                    continue
+                
+                if byte == b'\xaa':
+                    # Frame header found
+                    if raw_buffer:
+                        return (None, None, raw_buffer)
+                    
+                    # Parse structured message
+                    len_bytes = self.ser.read(2)
+                    if len(len_bytes) < 2:
+                        continue
+                    length = struct.unpack('<H', len_bytes)[0]
+                    
+                    data = self.ser.read(length)
+                    crc_received = self.ser.read(1)
+                    
+                    if len(data) == length and crc_received:
+                        if self.compute_crc(len_bytes + data) == ord(crc_received):
+                            msg_type = data[0]
+                            payload = data[1:]
+                            return (msg_type, payload, b'')
+                else:
+                    raw_buffer += byte
+                    if b'\n' in raw_buffer or len(raw_buffer) > 256:
+                        return (None, None, raw_buffer)
+            else:
+                break
+        
+        return (None, None, raw_buffer)
+
+
 class ECUTester:
     def __init__(self):
         self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=TIMEOUT)
+        self.frame_handler = FrameHandler(self.ser)
         self.current_speed = 50.0 # Vitesse initiale
         self.target_setpoint = 90.0
         self.last_output = 0.0
         self.running = True
         self.stats_count = 0
         self.start_time = time.time()
-        self.log_file = open(LOG_FILE, 'w', buffering=1)  # Line-buffered
+        self.log_file = open(LOG_FILE, 'w', encoding='utf-8', buffering=1)  # Line-buffered
 
     def _log(self, message):
         """Write message to both console and log file with timestamp"""
@@ -56,87 +127,43 @@ class ECUTester:
         self.current_speed += acceleration * dt
         self.current_speed = max(0.0, min(MAX_SPEED, self.current_speed))
 
-    def compute_crc(self, data_bytes):
-        """Calcule le CRC par XOR de tous les octets sauf le START"""
-        crc = 0
-        for b in data_bytes:
-            crc ^= b
-        return crc
-    
-    def send_frame(self, msg_type, payload=b''):
-        """Construit et envoie une trame au format:
-[0xAA][LEN][TYPE][PAYLOAD][CRC]"""
-        length = len(payload) + 1 # LEN: Taille de (TYPE + PAYLOAD)
-        # Format: <H (uint16 little endian), B (uint8)
-        header = struct.pack('<HB', length, msg_type)
-        full_msg = header + payload
-        crc = self.compute_crc(full_msg)
-        frame = struct.pack('B', 0xAA) + full_msg + struct.pack('B', crc)
-        self.ser.write(frame)
-
     def receive_feedback(self):
         """Lit et décode les messages venant de l'ECU (Output et Télémétrie)
         Capture également les logs texte ESP-IDF"""
-        raw_buffer = b''  # Buffer pour logs texte potentiels
+        raw_buffer = b''
 
         while self.running:
-            if self.ser.in_waiting > 0:
-                byte = self.ser.read(1)
-                if not byte:
-                    continue
-
-                # Vérifier si c'est le début d'une trame structurée
-                if byte == b'\xaa':
-                    # Flush any accumulated text first
-                    if raw_buffer:
-                        text = raw_buffer.decode('utf-8', errors='ignore').strip()
+            msg_type, payload, raw_text = self.frame_handler.receive_frame()
+            
+            # Handle raw text logs
+            if raw_text:
+                raw_buffer += raw_text
+                if b'\n' in raw_buffer:
+                    lines = raw_buffer.split(b'\n')
+                    for line in lines[:-1]:
+                        text = line.decode('utf-8', errors='ignore').strip()
                         if text:
                             self._log(f"[ESP32 LOG] {text}")
-                        raw_buffer = b''
-
-                    # Parse structured message
-                    len_bytes = self.ser.read(2)
-                    if len(len_bytes) < 2:
-                        continue
-                    length = struct.unpack('<H', len_bytes)[0]
-
-                    data = self.ser.read(length)
-                    crc_received = self.ser.read(1)
-
-                    if len(data) == length and crc_received:
-                        # Vérification CRC
-                        if self.compute_crc(len_bytes + data) == ord(crc_received):
-                            msg_type = data[0]
-                            payload = data[1:]
-
-                            if msg_type == MSG_OUTPUT:
-                                self.last_output = struct.unpack('<f', payload)[0]
-                                print(f"[SPEED] ({self.current_speed:.2f} km/h) | Commande: {self.last_output:.2f}")
-                            elif msg_type == MSG_STATS:
-                                self.stats_count += 1
-                                print(f"[TELEMETRIE] Reçue ({self.stats_count}s)")
-
-                            elif msg_type == MSG_ALARM:
-                                print(f"\n[ALERTE ECU] : {payload.decode(errors='ignore')}")
-                else:
-                    # Accumulate potentially readable text
-                    raw_buffer += byte
-
-                    # If buffer is getting large or contains newline, try to decode
-                    if b'\n' in raw_buffer or len(raw_buffer) > 256:
-                        lines = raw_buffer.split(b'\n')
-                        for line in lines[:-1]:
-                            text = line.decode('utf-8', errors='ignore').strip()
-                            if text:
-                                self._log(f"[ESP32 LOG] {text}")
-                        # Keep the incomplete line for next iteration
-                        raw_buffer = lines[-1]
+                    raw_buffer = lines[-1]
+            
+            # Handle structured frames
+            if msg_type is not None:
+                raw_buffer = b''
+                
+                if msg_type == MSG_OUTPUT:
+                    self.last_output = struct.unpack('<f', payload)[0]
+                    print(f"[SPEED] ({self.current_speed:.2f} km/h) | Commande: {self.last_output:.2f}")
+                elif msg_type == MSG_STATS:
+                    self.stats_count += 1
+                    print(f"[TELEMETRIE] Reçue ({self.stats_count}s)")
+                elif msg_type == MSG_ALARM:
+                    print(f"\n[ALERTE ECU] : {payload.decode(errors='ignore')}")
 
     def run_normal_operation(self, duration):  
         """Phase de fonctionnement normal (100ms cycle) """
         print(f"--- DÉBUT PHASE NORMALE ({duration}s) ---")
-        self.send_frame(MSG_SETPOINT, struct.pack('<f', self.target_setpoint))
-        self.send_frame(MSG_MODE_SET, struct.pack('B', 2)) # Mode AUTO
+        self.frame_handler.send_frame(MSG_SETPOINT, struct.pack('<f', self.target_setpoint))
+        self.frame_handler.send_frame(MSG_MODE_SET, struct.pack('B', 2)) # Mode AUTO
     
         end_time = time.time() + duration
         last_tick = time.time()
@@ -147,7 +174,7 @@ class ECUTester:
 
             self.update_vehicle_model(dt)
             # Envoi de la vitesse mesurée toutes les 100ms
-            self.send_frame(MSG_SPEED, struct.pack('<f', self.current_speed))
+            self.frame_handler.send_frame(MSG_SPEED, struct.pack('<f', self.current_speed))
             time.sleep(SPEED_TX_PERIOD_S)
 
     def run_stress_test(self):
@@ -157,7 +184,7 @@ class ECUTester:
         # 1. Flood de messages (Surcharge CPU)
         print("Action: Surcharge CPU (Flood)...")
         for _ in range(50):
-            self.send_frame(random.randint(0, 0xFF), os.urandom(4))
+            self.frame_handler.send_frame(random.randint(0, 0xFF), os.urandom(4))
 
         # 2. Trames fragmentées
         print("Action: Envoi de trame fragmentée...")

@@ -8,4 +8,3 @@ extern "C"
 #else
 #    define ESP_LOGI(tag, format, ...) ((void)0)
 #endif
-
