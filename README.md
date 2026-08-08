@@ -1,93 +1,189 @@
-# ECU RealTime
+# ECU RealTime – Embedded Cruise Control Regulator
 
+> A robust real-time Electronic Control Unit (ECU) implementing deterministic PID-based speed regulation on ESP32 with FreeRTOS
+>
+> **Grade: 17/20** | EPITA 2026 Embedded Systems & Real-Time Engineering
 
+---
 
-## Getting started
+## Project Overview
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+This project demonstrates the design and implementation of a safety-critical embedded control system. The ECU is a cruise control regulator that:
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- **Receives** speed setpoint and sensor data via UART communication
+- **Computes** motor commands using a discrete PID controller
+- **Outputs** control signals with strict real-time guarantees
+- **Ensures** safe failsafe behavior under sensor loss or communication failures
+- **Handles** message corruption, floods, and hardware stress with zero control interruption
 
-## Add your files
+### Key Technical Challenge
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+Implementing hard real-time constraints (100ms cycle time, <5ms jitter) on a resource-constrained microcontroller while maintaining communication robustness and system safety—even under adversarial conditions (malformed packets, CPU overload, network silence).
 
+---
+
+## Highlights
+
+- **Deterministic real-time control**: Guaranteed ≤5ms jitter on PID regulation cycle
+- **Failsafe mechanism**: Automatic shutdown if no valid message received for 2s
+- **Robustness under stress**: Handles packet fragmentation, CRC errors, and flood attacks
+- **Priority inversion prevention**: Carefully designed FreeRTOS task architecture
+- **Comprehensive telemetry**: Real-time statistics (RX valid/corrupt/dropped, TX count)
+- **Production-quality design**: Clear separation of concerns with multi-threaded UART handling
+
+---
+
+## Architecture
+
+### Task Structure
+
+| Task | Priority | Period | Role |
+|------|----------|--------|------|
+| **ControlTask** | HIGH | 100 ms | PID calculation, motor command output |
+| **UARTRxTask** | CRITICAL | Event-driven | Frame reception & parsing, CRC validation |
+| **TelemetryTask** | LOW | 1 s | Statistics collection & emission |
+| **FailsafeTask** | HIGH | 100 ms | Timeout detection, safety shutdown |
+| **GPIOMonitorTask** | CRITICAL | Event-driven | External error signal (optional) |
+
+### Design Principles
+
+- **Priority-based preemption**: UART reception cannot delay control loop
+- **Message queue isolation**: Malformed frames dropped without affecting regulation
+- **Dual failsafe triggers**: Both timeout and external GPIO independently trigger shutdown
+- **Anti-windup integration**: PID integral term clipped when saturated to prevent overshoot
+- **Atomic frame emission**: Mutex protection prevents byte interleaving on UART
+
+---
+
+## Technical Implementation
+
+### PID Controller
+
+```c
+// Discrete PID with saturation and anti-windup
+output = (Kp * error) + (Ki * ∫error·dt) + (Kd * d(error)/dt)
+// Saturated to [0, 255]
+// Integral clipping when output is saturated
+
+// Default coefficients:
+Kp = 1.0, Ki = 0.1, Kd = 0.01
 ```
-cd existing_repo
-git remote add origin https://gitlab.cri.epita.fr/ivan.estieu/ecu-realtime.git
-git branch -M main
-git push -uf origin main
+
+### Communication Protocol
+
+Custom variable-length frame format (inspired by CAN):
+```
+[START: 0xAA] [LEN: 2B] [TYPE: 1B] [PAYLOAD: N bytes] [CRC: 1B]
 ```
 
-## Integrate with your tools
+**Message Types:**
+- `0x01` SETPOINT (float) – Target speed
+- `0x02` SPEED (float) – Measured speed  
+- `0x05` MODE_SET (u8) – OFF / MANUAL / AUTO
+- `0x80` OUTPUT (float) – Motor command
+- `0x83` STATS (u32[4]) – Telemetry counters
+- `0x85` ALARM (string) – Critical fault messages
 
-* [Set up project integrations](https://gitlab.cri.epita.fr/ivan.estieu/ecu-realtime/-/settings/integrations)
+### Real-Time Guarantees
 
-## Collaborate with your team
+- **Cycle time**: Exactly 100ms ±5ms (hardware timer + task scheduling)
+- **Failsafe response**: <5ms from GPIO interrupt or message timeout
+- **Frame integrity**: Mutex-protected UART writes, no byte interleaving
+- **Jitter control**: Dedicated high-priority control task, preemption points analyzed
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+---
 
-## Test and Deploy
+## Getting Started
 
-Use the built-in continuous integration in GitLab.
+### Prerequisites
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+- **Hardware**: ESP32 DevKit
+- **Framework**: ESP-IDF 5.x
+- **OS**: Ubuntu/Linux for build
 
-***
 
-# Editing this README
+### Testing
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+The repository includes a Python test suite that validates:
 
-## Suggestions for a good README
+---
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+**Test scenarios:**
+- Normal operation (30s)
+- Packet fragmentation (pauses mid-frame)
+- CRC corruption injection
+- CPU overload (50 random message flood)
+- Failsafe timeout (2.5s silence)
 
-## Name
-Choose a self-explaining name for your project.
+## Key Lessons & Design Decisions
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### Why Multi-Task Architecture?
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+A monolithic design would have failed under the real-time constraints:
+- **UART blocking** would delay PID calculation
+- **Message parsing** errors could corrupt regulation loop
+- **Failsafe detection** might miss timeout windows
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+**Solution**: Dedicated threads with strict priority discipline and queue-based decoupling.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+### Handling Priority Inversion
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+**Challenge**: Low-priority telemetry task acquiring UART mutex could block high-priority control task.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+**Solution**: Use FreeRTOS priority inheritance mutexes + spinlock for critical sections <1ms.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Robustness Under Packet Loss
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+**Challenge**: Malformed frames could leave parser in inconsistent state.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+**Solution**: 
+- Frame boundary detection using 0xAA start marker
+- CRC validation on complete frames only
+- Silent rejection with error counter (reported in telemetry)
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+---
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+## Technologies & Tools
 
-## License
-For open source projects, say how it is licensed.
+- **Microcontroller**: ESP32
+- **RTOS**: FreeRTOS with full preemption
+- **Framework**: ESP-IDF (Espressif IoT Development Framework)
+- **Language**: C++
+- **Testing**: Python 3.9 + PySerial
+- **Version Control**: Git
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+---
+
+## Performance & Limitations
+
+### Known Limitations
+
+1. **Fixed PID coefficients**: Tuned for simulation model; real vehicle may require recalibration
+2. **Single ECU**: No multi-vehicle communication or CAN bus integration
+3. **No persistent logging**: Telemetry lost on power cycle (could add SPIFFS/SD card)
+4. **GPIO failsafe optional**: Implemented but requires external circuit
+
+---
+
+## Learning Outcomes
+
+This project reinforced expertise in:
+
+- **Real-time system design**: Task scheduling, timing analysis, jitter control
+- **Embedded C++ programming**: Memory-constrained, zero-allocation design patterns
+- **RTOS fundamentals**: Mutexes, semaphores, queues, priority inheritance
+- **Safety engineering**: Failsafe mechanisms, defensive programming, robustness testing
+- **Hardware-software co-design**: Interrupt handling, timer configuration, serial protocols
+
+---
+
+## Author
+
+**Ivan Estieu** – Embedded Systems Engineer Student  
+**Iban Peyret** - Embedded Systems Engineer Student
+EPITA 2026 | Specialized in Embedded Systems
+
+---
+
+**Last Updated**: August 2026  
+**Grade**: 17/20
