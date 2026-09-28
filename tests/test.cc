@@ -1,14 +1,10 @@
-#include <format>
-#include <iomanip>
-#include <iostream>
-
-#include "frame/builder.hh"
+#include "frame/builder.h"
 #include "frame/parser.hh"
 
-static constexpr std::string GREEN = "\033[32m";
-static constexpr std::string RED = "\033[31m";
-static constexpr std::string RESET = "\033[0m";
-static constexpr std::string BOLD = "\033[1m";
+#define GREEN "\033[32m"
+#define RED "\033[31m"
+#define RESET "\033[0m"
+#define BOLD "\033[1m"
 
 // ===========================================================================
 // TESTS UNITAIRES

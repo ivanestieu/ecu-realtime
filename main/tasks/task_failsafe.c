@@ -1,24 +1,21 @@
-extern "C"
-{
-#include "driver/gpio.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-}
-#include <string>
+#include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
-#include "frame/builder.hh"
-#include "frame/frame.hh"
-#include "shared_memory/shared_memory.hh"
-#include "task_failsafe.hh"
-#include "task_uart_emitter.hh"
-#include "utils/ecu_mode.hh"
-#include "utils/safe_esp_log.hh"
+#include "task_failsafe.h"
 
-static TaskHandle_t failsafe_task_handle = nullptr;
+#include "frame/builder.h"
+#include "frame/frame.h"
+#include "shared_memory/shared_memory.h"
+#include "task_uart_emitter.h"
+#include "utils/ecu_mode.h"
+#include "utils/safe_esp_log.h"
 
-static constexpr unsigned int NOTIFY_TIMEOUT = (1 << 0);
-static constexpr unsigned int NOTIFY_GPIO = (1 << 1);
-static constexpr unsigned int FRAME_TIMEOUT_MS = 2000;
+static TaskHandle_t failsafe_task_handle = NULL;
+
+#define NOTIFY_TIMEOUT (1 << 0)
+#define NOTIFY_GPIO (1 << 1)
+#define FRAME_TIMEOUT_MS 2000
 
 void IRAM_ATTR failsafe_gpio_isr_handler(__attribute__((unused)) void* arg)
 {
@@ -32,18 +29,18 @@ static void trigger_failsafe(const char* reason)
 {
     ESP_LOGI(__FILE_NAME__, "FAILSAFE TRIGGERED: %s", reason);
 
-    SharedMemory::set_output(0.0f);
+    set_output(0.0f);
 
-    SharedMemory::set_mode(ECUMode::OFF);
+    set_mode(OFF);
 
-    const Frame frame = builder::alarm(std::string(reason));
-    uart_emit_failsafe_frame(frame);
-    const auto& frame_bytes = frame.get_full_frame();
+    const Frame frame = alarm(reason);
+    uart_emit_failsafe_frame(&frame);
+    const Span frame_bytes = get_full_frame(&frame);
     ESP_LOGI(__FILE_NAME__, "Failsafe alarm frame sent (%d bytes)",
-             frame_bytes.size());
+             frame_bytes.size);
 }
 
-[[noreturn]] void task_failsafe(__attribute__((unused)) void* params)
+_Noreturn void task_failsafe(__attribute__((unused)) void* params)
 {
     ESP_LOGI(__FILE_NAME__, "task_failsafe: Starting failsafe monitor");
     failsafe_task_handle = xTaskGetCurrentTaskHandle();
@@ -65,11 +62,11 @@ static void trigger_failsafe(const char* reason)
         }
 
         const uint32_t now = xTaskGetTickCount();
-        const uint32_t last_rx = SharedMemory::get_last_rx_tick();
+        const uint32_t last_rx = get_last_rx_tick();
         const uint32_t elapsed = (now - last_rx) * portTICK_PERIOD_MS;
 
         if (elapsed > FRAME_TIMEOUT_MS
-            && SharedMemory::get_mode() != ECUMode::OFF)
+            && get_mode() != OFF)
         {
             trigger_failsafe("FAILSAFE: no valid frame for 2s");
         }

@@ -1,4 +1,7 @@
-#pragma once
+#ifndef ECU_MODE_H
+#define ECU_MODE_H
+
+#include <stdint.h>
 
 enum ECUMode
 {
@@ -11,13 +14,15 @@ inline const char* mode_to_string(const uint8_t mode)
 {
     switch (mode)
     {
-    case ECUMode::OFF:
+    case OFF:
         return "OFF";
-    case ECUMode::MANUAL:
+    case MANUAL:
         return "MANUAL";
-    case ECUMode::AUTO:
+    case AUTO:
         return "AUTO";
     default:
         return "UNKNOWN";
     }
 }
+
+#endif // ECU_MODE_H
