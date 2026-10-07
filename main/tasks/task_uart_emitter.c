@@ -76,7 +76,7 @@ void task_uart_emitter(__attribute__((unused)) void* params)
     if (!q)
     {
         ESP_LOGE(__FILE_NAME__, "task_uart_emitter: tx_queue not available");
-        vTaskDelete(nullptr);
+        vTaskDelete(NULL);
         return;
     }
 

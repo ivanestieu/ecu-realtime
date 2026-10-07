@@ -21,7 +21,6 @@ static void uart_init()
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .rx_flow_ctrl_thresh = 0,
-        .rx_glitch_filt_thresh = 0,
         .source_clk = UART_SCLK_DEFAULT,
         .flags = {},
     };

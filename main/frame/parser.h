@@ -120,7 +120,7 @@ static inline Frame *handle_crc(Parser *parser, uint8_t byte)
     {
         parser->state_ = IDLE;
         Frame *res = &parser->current_frame_.frame;
-        parser->current_frame_ = empty_optional();
+        parser->current_frame_.has_value = false;
         return res;
     }
     parser->state_ = IDLE;

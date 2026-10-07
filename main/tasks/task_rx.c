@@ -6,6 +6,9 @@
 #include "frame/parser.h"
 #include "shared_memory/shared_memory.h"
 #include "task_rx.h"
+
+#include "ecu_mode.h"
+#include "frame/builder.h"
 #include "utils/safe_esp_log.h"
 
 static void handle_frame(const Frame* frame)
@@ -16,7 +19,7 @@ static void handle_frame(const Frame* frame)
     case SPEED: {
         if (payload.size >= sizeof(float))
         {
-            const float speed = payload.data[0];
+            const float speed = bytes_to_float(payload.data);
             set_speed(speed);
             ESP_LOGI(__FILE_NAME__, "task_rx: SPEED frame received: %.2f km/h",
                      speed);
@@ -26,7 +29,7 @@ static void handle_frame(const Frame* frame)
     case SETPOINT: {
         if (payload.size >= sizeof(float))
         {
-            const float setpoint = payload.data[0];
+            const float setpoint = bytes_to_float(payload.data);
             set_setpoint(setpoint);
             ESP_LOGI(__FILE_NAME__,
                      "task_rx: SETPOINT frame received: %.2f km/h", setpoint);
@@ -38,8 +41,8 @@ static void handle_frame(const Frame* frame)
         {
             const uint8_t new_mode = payload.data[0];
             set_mode(new_mode);
-            ESP_LOGI(__FILE_NAME__, "task_rx: MODE_SET frame received: mode=%d",
-                     new_mode);
+            ESP_LOGI(__FILE_NAME__, "task_rx: MODE_SET frame received: mode=%s",
+                     mode_to_string(new_mode));
         }
         break;
     }
@@ -66,15 +69,17 @@ _Noreturn void task_rx(__attribute__((unused)) void* params)
             continue;
         }
 
-        const Frame *frame = push_byte(&parser, byte);
-        if (!frame)
+        const Frame *frame_ptr = push_byte(&parser, byte);
+        if (!frame_ptr)
         {
             continue;
         }
+        const Frame frame = *frame_ptr;
+
 
         set_last_rx_tick(xTaskGetTickCount());
         inc_stats_valid();
 
-        handle_frame(frame);
+        handle_frame(&frame);
     }
 }

@@ -2,9 +2,9 @@
 
 #include "utils/safe_esp_log.h"
 
-uint8_t *float_to_bytes(float f)
+const uint8_t *float_to_bytes(const float *f)
 {
-    void *f_ptr = &f;
+    const void *f_ptr = f;
     return f_ptr;
 }
 
@@ -18,7 +18,7 @@ float bytes_to_float(const uint8_t bytes[sizeof(float)])
 Frame output(const float command)
 {
     Frame frame = init_frame(OUTPUT, sizeof(float));
-    const uint8_t *bytes = float_to_bytes(command);
+    const uint8_t *bytes = float_to_bytes(&command);
     for (size_t i = 0; i < sizeof(float); i++)
     {
         payload_append(&frame, bytes[i]);
@@ -30,7 +30,7 @@ Frame output(const float command)
 
 Frame stats(const uint32_t stats[STATS_SIZE])
 {
-    Frame frame = init_frame(STATS, STATS_SIZE);
+    Frame frame = init_frame(STATS, STATS_SIZE * sizeof(uint32_t));
 
     for (size_t i = 0; i < STATS_SIZE; i++)
     {

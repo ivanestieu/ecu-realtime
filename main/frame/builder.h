@@ -9,7 +9,7 @@ Frame output(float command);
 Frame stats(const uint32_t stats[STATS_SIZE]);
 Frame alarm(const char *msg);
 Frame debug(const char *msg);
-uint8_t *float_to_bytes(float f);
+const uint8_t *float_to_bytes(const float *f);
 float bytes_to_float(const uint8_t bytes[sizeof(float)]);
 
 #endif // BUILDER_H

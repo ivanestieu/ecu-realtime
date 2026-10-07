@@ -4,17 +4,17 @@
 #include "shared_memory.h"
 #include "utils/safe_esp_log.h"
 
-SemaphoreHandle_t g_mutex;
+static SemaphoreHandle_t g_mutex;
 
-float s_speed = 0.0f;
-float s_setpoint = 0.0f;
-uint8_t s_mode = 0x00;
-float s_output = 0.0f;
-uint32_t s_last_rx_tick = 0;
-uint32_t s_stats_valid = 0;
-uint32_t s_stats_corrupted = 0;
-uint32_t s_stats_dropped = 0;
-uint32_t s_stats_output = 0;
+static float s_speed = 0.0f;
+static float s_setpoint = 0.0f;
+static uint8_t s_mode = 0x00;
+static float s_output = 0.0f;
+static uint32_t s_last_rx_tick = 0;
+static uint32_t s_stats_valid = 0;
+static uint32_t s_stats_corrupted = 0;
+static uint32_t s_stats_dropped = 0;
+static uint32_t s_stats_output = 0;
 
 void init_shared_memory()
 {
